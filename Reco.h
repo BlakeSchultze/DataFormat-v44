@@ -173,7 +173,21 @@ public:
 
       if (superTracks_.size() > 0) {
          Corrections();
+         //
+         // normal return if no hits to recover
+         //
          return;   // seems to be fine event
+      }
+
+      //
+      // The supertrack container is empty here. Two possibility:
+      // 1) no 2D supertracks found: try to recover the missing gap hits
+      // 2) too many 2D supertracks: ambiguity ==> return
+      //
+      if (vSuperTracks_.size() > 0 && tSuperTracks_.size() > 0) {
+          // ambiguity
+          if (debug_) cout<< "ambiguity: vSuperTracks_.size() = " << vSuperTracks_.size() << " tSuperTracks_.size() = " << tSuperTracks_.size() <<endl;
+          return;
       }
 
       // try to recover gap hits
@@ -208,7 +222,13 @@ public:
       if (superTracks_.size() == 0) return;
 
       //-- Double_t tilt = 2.94e-3;    // radians
-      Double_t tilt = 2.50e-3;    // radians       // after Robert's corrections
+      //-- Double_t tilt = 2.50e-3;    // radians       // after Robert's corrections
+      Double_t tilt = 0;
+
+      //-- Double_t offset = 12;
+      Double_t offset_v = 0;
+
+      Double_t offset_t = 0;
 
       for (std::list<const SuperTrack*>::iterator it=superTracks_.begin(); it!=superTracks_.end(); ++it) {
         const SuperTrack* superTrack = *it;
@@ -221,8 +241,8 @@ public:
         //--AZ-- otrack_t->x_ -= v0*tilt - 0.030;
         //--AZ-- otrack_v->x_ += (t0 - 150.)*tilt - 0.15;
 
-        otrack_t->x_ -= (v0 - 12.)*tilt;
-        otrack_v->x_ += t0*tilt;
+        otrack_t->x_ -= (v0 - offset_v)*tilt;
+        otrack_v->x_ += (t0 - offset_t)*tilt;
 
         // otrack_t->x_ -= (v0 - 10.)*tilt;
         // otrack_v->x_ += (t0 - 170.)*tilt;
@@ -230,6 +250,8 @@ public:
    }
    void RecoverHits(Int_t layerToStart, const BeamSpot* beamSpot)
    {
+      if (debug_) cout<< "RecoverHits: layerToStart = " << layerToStart <<endl;
+
       Int_t n_t_hits[4];   // initial number of the hits before adding of the gap hits
       for (int ilayer=0; ilayer<4; ++ilayer) n_t_hits[ilayer] = pCTSensors_->t_hits[ilayer].size();
 
@@ -239,17 +261,18 @@ public:
       SensorHit vertexHit_t(0, 0, 0, beamSpot->u_, beamSpot->t_);          // vertex hit for recovery of the t-hits
       SensorHit vertexHit_v(0, 0, 0, beamSpot->u_, beamSpot->v_);          // vertex hit for recovery of the v-hits
 
-      Int_t layer1 = layerToStart;
-      Int_t layer2 = layer1 + 1;
+      // Int_t layer1 = layerToStart;
+      // Int_t layer2 = layer1 + 1;
 
-      //-- Double_t distance_max = 1. + 5.*beamSpot->r_*(geometry_->ut_[1]-geometry_->ut_[0])/(geometry_->ut_[0] - beamSpot->u_);
-      Double_t distance_max = 1. + 5.*beamSpot->r_*(geometry_->ut_[layer2]-geometry_->ut_[layer1])/(geometry_->ut_[layer1] - beamSpot->u_);
+      //--old-- Double_t distance_max = 1. + 5.*beamSpot->r_*(geometry_->ut_[1]-geometry_->ut_[0])/(geometry_->ut_[0] - beamSpot->u_);
+      //-- Double_t distance_max = 1. + 5.*beamSpot->r_*(geometry_->ut_[layer2]-geometry_->ut_[layer1])/(geometry_->ut_[layer1] - beamSpot->u_);
 
       for (int ilayer=layerToStart; ilayer<=layerToStart+1; ++ilayer)
       {
          for (int ihit=0; ihit<n_t_hits[ilayer]; ++ihit)           // loop over "real" t-hits
          {
             const SensorHit* hit = pCTSensors_->t_hits[ilayer][ihit];
+            if (debug_) cout<< "ilayer = " << ilayer << " ihit = " << ihit << " hit: " << *hit <<endl;
             Track2D vertex_track(&vertexHit_t, hit);
 
             Int_t layerTo = (ilayer == layerToStart)? layerToStart+1: layerToStart;
@@ -259,6 +282,7 @@ public:
             // look at t-gaps for t-hits recovery
             for (int igap=0; igap<3; ++igap)
             {
+               if (debug_) cout<< "   t-gaps: igap = " << igap << " pos = " << pos << " pCTSensors_->gap_.tgap_[layerTo][igap] = " << pCTSensors_->gap_.tgap_[layerTo][igap] <<endl;
                //------------- if (TMath::Abs(pos - pCTSensors_->gap_.tgap_[layerTo][igap]) < distance_max)
                if (TMath::Abs(pos - pCTSensors_->gap_.tgap_[layerTo][igap]) < pCTSensors_->gap_.width_)
                {
@@ -279,13 +303,14 @@ public:
                      SensorHit(sensorId, 0, nstrips_gap, geometry_->ut_[layerTo], pos_mean);
                   // add it to the common place
                   pCTSensors_->t_hits[layerTo].push_back(gapHit);
-                  if (debug_) cout<< "  added t hit " << *gapHit <<endl;
+                  if (debug_) cout<< "  ilayer = " << ilayer << " ihit = " << ihit << " igap = " << igap << " added t hit " << *gapHit <<endl;
                }
             }
 
             // look at v-gaps for v-hits recovery
             for (int igap=0; igap<3; ++igap)
             {
+               if (debug_) cout<< "   v-gaps: igap = " << igap << " pos = " << pos << " pCTSensors_->gap_.vgap_[layerTo][igap] = " << pCTSensors_->gap_.vgap_[layerTo][igap] <<endl;
                //------------ if (TMath::Abs(pos - pCTSensors_->gap_.vgap_[layerTo][igap]) < distance_max)
                if (TMath::Abs(pos - pCTSensors_->gap_.vgap_[layerTo][igap]) < pCTSensors_->gap_.width_)
                {
@@ -302,12 +327,13 @@ public:
                         SensorHit(sensorId, 0, nstrips_gap, geometry_->uv_[layerTo], vertex_track_v.at(geometry_->uv_[layerTo]));    // create v-hit at projection of v vertex track
                      // add it to the common place
                      pCTSensors_->v_hits[layerTo].push_back(gapHit);
-                     if (debug_) cout<< "  added v hit " << *gapHit <<endl;
+                     if (debug_) cout<< "  ilayer = " << ilayer << " ihit = " << ihit << " igap = " << igap << " added v hit " << *gapHit <<endl;
                   }
                }
             }
          }
       }
+      if (debug_) cout<< "return from RecoverHits" <<endl;
    }
    void GenerateTracks2D()
    {
@@ -320,10 +346,10 @@ public:
 
       for (unsigned ihit1=0; ihit1<pCTSensors_->t_hits[0].size(); ++ihit1) {
          const SensorHit* hit1 = pCTSensors_->t_hits[0][ihit1];
-         if (debug_) cout<< "hit1: " << *hit1 <<endl;
+         // if (debug_) cout<< "hit1: " << *hit1 <<endl;
          for (unsigned ihit2=0; ihit2<pCTSensors_->t_hits[1].size(); ++ihit2) {
             const SensorHit* hit2 = pCTSensors_->t_hits[1][ihit2];
-            if (debug_) cout<< "hit2: " << *hit2 <<endl;
+            // if (debug_) cout<< "hit2: " << *hit2 <<endl;
             if (hit1->sensorId_ < 0 && hit2->sensorId_ < 0) continue;   // at least one of the hits should be "real"
             Track2D* cRay2d = new ((*poolTrack2D_)[poolTrack2D_->GetLast()+1]) Track2D(hit1, hit2);
             tin_.push_back(cRay2d);
@@ -332,10 +358,10 @@ public:
 
       for (unsigned ihit1=0; ihit1<pCTSensors_->t_hits[2].size(); ++ihit1) {
          const SensorHit* hit1 = pCTSensors_->t_hits[2][ihit1];
-         if (debug_) cout<< "hit1: " << *hit1 <<endl;
+         // if (debug_) cout<< "hit1: " << *hit1 <<endl;
          for (unsigned ihit2=0; ihit2<pCTSensors_->t_hits[3].size(); ++ihit2) {
             const SensorHit* hit2 = pCTSensors_->t_hits[3][ihit2];
-            if (debug_) cout<< "hit2: " << *hit2 <<endl;
+            // if (debug_) cout<< "hit2: " << *hit2 <<endl;
             if (hit1->sensorId_ < 0 && hit2->sensorId_ < 0) continue;   // at least one of the hits should be "real"
             Track2D* cRay2d = new ((*poolTrack2D_)[poolTrack2D_->GetLast()+1]) Track2D(hit1, hit2);
             tout_.push_back(cRay2d);
@@ -344,26 +370,22 @@ public:
 
       if (debug_) {
          cout<< "tin_" <<endl;
-         for (std::list<const Track2D*>::const_iterator it=tin_.begin(); it!=tin_.end(); ++it) {
-            cout<< "it->x_ = " << (*it)->x_ <<endl;
-         }
+         for (std::list<const Track2D*>::const_iterator it=tin_.begin(); it!=tin_.end(); ++it) cout<< **it <<endl;
       }
 
       if (debug_) {
          cout<< "tout_" <<endl;
-         for (std::list<const Track2D*>::const_iterator it=tout_.begin(); it!=tout_.end(); ++it) {
-            cout<< "it->x_ = " << (*it)->x_ <<endl;
-         }
+         for (std::list<const Track2D*>::const_iterator it=tout_.begin(); it!=tout_.end(); ++it) cout<< **it <<endl;
       }
 
       // V-sensors
 
       for (unsigned ihit1=0; ihit1<pCTSensors_->v_hits[0].size(); ++ihit1) {
          SensorHit* hit1 = pCTSensors_->v_hits[0][ihit1];
-         if (debug_) cout<< "hit1: " << *hit1 <<endl;
+         // if (debug_) cout<< "hit1: " << *hit1 <<endl;
          for (unsigned ihit2=0; ihit2<pCTSensors_->v_hits[1].size(); ++ihit2) {
             SensorHit* hit2 = pCTSensors_->v_hits[1][ihit2];
-            if (debug_) cout<< "hit2: " << *hit2 <<endl;
+            // if (debug_) cout<< "hit2: " << *hit2 <<endl;
             if (hit1->sensorId_ < 0 && hit2->sensorId_ < 0) continue;   // at least one of the hits should be "real"
             Track2D* cRay2d = new ((*poolTrack2D_)[poolTrack2D_->GetLast()+1]) Track2D(hit1, hit2);
             vin_.push_back(cRay2d);
@@ -372,10 +394,10 @@ public:
 
       for (unsigned ihit1=0; ihit1<pCTSensors_->v_hits[2].size(); ++ihit1) {
          SensorHit* hit1 = pCTSensors_->v_hits[2][ihit1];
-         if (debug_) cout<< "hit1: " << *hit1 <<endl;
+         // if (debug_) cout<< "hit1: " << *hit1 <<endl;
          for (unsigned ihit2=0; ihit2<pCTSensors_->v_hits[3].size(); ++ihit2) {
             SensorHit* hit2 = pCTSensors_->v_hits[3][ihit2];
-            if (debug_) cout<< "hit2: " << *hit2 <<endl;
+            // if (debug_) cout<< "hit2: " << *hit2 <<endl;
             if (hit1->sensorId_ < 0 && hit2->sensorId_ < 0) continue;   // at least one of the hits should be "real"
             Track2D* cRay2d = new ((*poolTrack2D_)[poolTrack2D_->GetLast()+1]) Track2D(hit1, hit2);
             vout_.push_back(cRay2d);
@@ -384,16 +406,12 @@ public:
 
       if (debug_) {
          cout<< "vin_" <<endl;
-         for (std::list<const Track2D*>::const_iterator it=vin_.begin(); it!=vin_.end(); ++it) {
-            cout<< "it->x_ = " << (*it)->x_ <<endl;
-         }
+         for (std::list<const Track2D*>::const_iterator it=vin_.begin(); it!=vin_.end(); ++it) cout<< **it <<endl;
       }
 
       if (debug_) {
          cout<< "vout_" <<endl;
-         for (std::list<const Track2D*>::const_iterator it=vout_.begin(); it!=vout_.end(); ++it) {
-            cout<< "it->x_ = " << (*it)->x_ <<endl;
-         }
+         for (std::list<const Track2D*>::const_iterator it=vout_.begin(); it!=vout_.end(); ++it) cout<< **it <<endl;
       }
    }
    void GenerateVSuperTracks2D(Double_t rmax=10.)
@@ -402,12 +420,14 @@ public:
 
       // start from V-senosors: as a max we can reconstruct two tracks and only if they are from different V-sensors
       for (std::list<const Track2D*>::const_iterator it=vin_.begin(); it!=vin_.end(); ++it) {
-         const Track2D* itrack = *it;
+         const Track2D* itrack2D = *it;
          for (std::list<const Track2D*>::const_iterator ot=vout_.begin(); ot!=vout_.end(); ++ot) {
-            const Track2D* otrack = *ot;
-            //-- SuperTrack2D* superTrack = new SuperTrack2D(itrack, otrack);
-            SuperTrack2D* superTrack = new ((*poolSuperTrack2D_)[poolSuperTrack2D_->GetLast()+1]) SuperTrack2D(itrack, otrack);
-            vSuperTracks_.push_back(superTrack);
+            const Track2D* otrack2D = *ot;
+            if (TMath::Abs(itrack2D->x_ - otrack2D->x_) < rmax) {
+                //-- SuperTrack2D* superTrack = new SuperTrack2D(itrack2D, otrack2D);
+                SuperTrack2D* superTrack = new ((*poolSuperTrack2D_)[poolSuperTrack2D_->GetLast()+1]) SuperTrack2D(itrack2D, otrack2D);
+                vSuperTracks_.push_back(superTrack);
+            }
          }
       }
 
@@ -474,9 +494,11 @@ public:
          const Track2D* itrack2D = *it;
          for (std::list<const Track2D*>::const_iterator ot=tout_.begin(); ot!=tout_.end(); ++ot) {
             const Track2D* otrack2D = *ot;
-            //-- SuperTrack2D* superTrack2D = new SuperTrack2D(itrack2D, otrack2D);
-            SuperTrack2D* superTrack2D = new ((*poolSuperTrack2D_)[poolSuperTrack2D_->GetLast()+1]) SuperTrack2D(itrack2D, otrack2D);
-            tSuperTracks_.push_back(superTrack2D);
+            if (TMath::Abs(itrack2D->x_ - otrack2D->x_) < rmax) {
+                //-- SuperTrack2D* superTrack2D = new SuperTrack2D(itrack2D, otrack2D);
+                SuperTrack2D* superTrack2D = new ((*poolSuperTrack2D_)[poolSuperTrack2D_->GetLast()+1]) SuperTrack2D(itrack2D, otrack2D);
+                tSuperTracks_.push_back(superTrack2D);
+            }
          }
       }
 
